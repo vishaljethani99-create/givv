@@ -1,0 +1,2365 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SignBridge – 3D Sign Language Avatar</title>
+  <meta name="description"
+    content="Type or speak English and a real-time 3D avatar performs the correct ASL signs. 60+ signs, A-Z fingerspelling, voice input. No app, no account.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap"
+    rel="stylesheet">
+  <script
+    type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"}}</script>
+  <!-- MediaPipe Hand Tracking (for real-time camera hand detection) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #EEF3F8;
+      --surface: #FFFFFF;
+      --ink: #10213A;
+      --muted: #51627C;
+      --line: #D5DEEA;
+      --sign: #2F5BFF;
+      --sign-soft: #DCE5FF;
+      --speech: #FFB020;
+      --speech-soft: #FFEFCC;
+      --radius: 22px;
+      --display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+      --body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+      --avatar-bg: linear-gradient(160deg, #0d1f3e 0%, #1a2f5a 60%, #0f2040 100%);
+    }
+
+    @media(prefers-color-scheme:dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0A1424;
+        --surface: #111F36;
+        --ink: #EAF0FA;
+        --muted: #9BAAC2;
+        --line: #22344F;
+        --sign: #4162e5;
+        --sign-soft: #1B2B5A;
+        --speech: #FFC247;
+        --speech-soft: #3A2D10;
+      }
+    }
+
+    :root[data-theme="dark"] {
+      --bg: #0A1424;
+      --surface: #111F36;
+      --ink: #EAF0FA;
+      --muted: #9BAAC2;
+      --line: #22344F;
+      --sign: #6F8CFF;
+      --sign-soft: #1B2B5A;
+      --speech: #FFC247;
+      --speech-soft: #3A2D10;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0
+    }
+
+    html {
+      scroll-behavior: smooth
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font: 400 1.0625rem/1.6 var(--body);
+      -webkit-font-smoothing: antialiased
+    }
+
+    a {
+      color: inherit
+    }
+
+    :focus-visible {
+      outline: 3px solid var(--sign);
+      outline-offset: 3px;
+      border-radius: 6px
+    }
+
+    .wrap {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 0 24px
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: var(--display);
+      line-height: 1.05;
+      letter-spacing: -.02em
+    }
+
+    h2 {
+      font-size: clamp(2rem, 4.5vw, 3.1rem);
+      font-weight: 800;
+      max-width: 18ch
+    }
+
+    h3 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -.01em
+    }
+
+    p {
+      max-width: 60ch
+    }
+
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 0
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font: 800 1.35rem var(--display);
+      text-decoration: none;
+      letter-spacing: -.02em
+    }
+
+    .logo svg {
+      width: 34px;
+      height: 34px
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 26px;
+      align-items: center;
+      font-weight: 500
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--muted)
+    }
+
+    .nav-links a:hover {
+      color: var(--ink)
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 0;
+      cursor: pointer;
+      font: 600 1rem var(--body);
+      padding: 14px 24px;
+      border-radius: 999px;
+      text-decoration: none;
+      transition: transform .15s, box-shadow .15s
+    }
+
+    .btn:active {
+      transform: scale(.97)
+    }
+
+    .btn-primary {
+      background: var(--ink);
+      color: var(--bg)
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 8px 24px -8px var(--ink)
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--ink);
+      box-shadow: inset 0 0 0 2px var(--line)
+    }
+
+    .btn-ghost:hover {
+      box-shadow: inset 0 0 0 2px var(--ink)
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 56px;
+      align-items: center;
+      padding: 48px 0 80px
+    }
+
+    .hero h1 {
+      font-size: clamp(2.4rem, 6vw, 5.2rem);
+      font-weight: 800
+    }
+
+    .hero h1 span {
+      display: block
+    }
+
+    .hero h1 .a {
+      color: var(--sign)
+    }
+
+    .hero h1 .b {
+      color: var(--speech)
+    }
+
+    .hero p.lead {
+      font-size: 1.15rem;
+      color: var(--muted);
+      margin: 26px 0 34px
+    }
+
+    .cta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap
+    }
+
+    .fine {
+      margin-top: 22px;
+      font-size: .95rem;
+      color: var(--muted)
+    }
+
+    /* AVATAR */
+    .avatar-layout {
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: 48px;
+      align-items: start
+    }
+
+    .avatar-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 20px
+    }
+
+    .avatar-controls p {
+      color: var(--muted);
+      font-size: 1.05rem
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+      align-items: stretch
+    }
+
+    #sign-input {
+      flex: 1;
+      border: 2px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 18px;
+      font: 500 1.05rem var(--body);
+      background: var(--surface);
+      color: var(--ink);
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    #sign-input:focus {
+      border-color: var(--sign)
+    }
+
+    #sign-input::placeholder {
+      color: var(--muted)
+    }
+
+    #sign-go {
+      padding: 14px 22px;
+      border-radius: 14px;
+      background: var(--sign);
+      color: #fff;
+      border: 0;
+      cursor: pointer;
+      font: 700 1rem var(--body);
+      white-space: nowrap;
+      transition: transform .15s, opacity .15s;
+    }
+
+    #sign-go:hover {
+      opacity: .85
+    }
+
+    #sign-go:active {
+      transform: scale(.96)
+    }
+
+    .mic-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap
+    }
+
+    #mic-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border-radius: 14px;
+      background: var(--speech);
+      color: #1b1300;
+      border: 0;
+      cursor: pointer;
+      font: 700 .95rem var(--body);
+      transition: transform .15s, opacity .15s;
+    }
+
+    #mic-btn:hover {
+      opacity: .85
+    }
+
+    #mic-btn.active {
+      background: #e05555;
+      color: #fff;
+      animation: pbtn 1.2s ease-in-out infinite
+    }
+
+    @keyframes pbtn {
+      50% {
+        opacity: .7
+      }
+    }
+
+    #speak-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border-radius: 14px;
+      background: var(--surface);
+      color: var(--ink);
+      border: 2px solid var(--line);
+      cursor: pointer;
+      font: 700 .95rem var(--body);
+      transition: all .15s;
+    }
+
+    #speak-btn:hover {
+      border-color: var(--ink)
+    }
+
+    .word-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-height: 2.5rem
+    }
+
+    .word-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--sign-soft);
+      color: var(--sign);
+      font: 600 .9rem var(--body);
+      transition: all .25s;
+    }
+
+    .word-chip.active {
+      background: var(--sign);
+      color: #fff;
+      transform: scale(1.08);
+      box-shadow: 0 4px 14px -4px var(--sign)
+    }
+
+    .word-chip.done {
+      opacity: .4
+    }
+
+    .sign-status {
+      min-height: 2.2em;
+      font-size: .95rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    .sign-status .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--sign);
+      animation: pdot 1.4s infinite
+    }
+
+    @keyframes pdot {
+      50% {
+        opacity: .2
+      }
+    }
+
+    .sign-library {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px
+    }
+
+    .lib-chip {
+      padding: 5px 13px;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1.5px solid var(--line);
+      font: .85rem var(--body);
+      cursor: pointer;
+      transition: all .2s;
+    }
+
+    .lib-chip:hover {
+      border-color: var(--sign);
+      color: var(--sign)
+    }
+
+    .avatar-canvas-wrap {
+      position: relative;
+      border-radius: 28px;
+      overflow: hidden;
+      background: var(--avatar-bg);
+      box-shadow: 0 32px 80px -24px rgba(15, 32, 64, .65), 0 0 0 1px rgba(111, 140, 255, .18);
+      aspect-ratio: 4/5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .avatar-canvas-wrap canvas {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover
+    }
+
+    .avatar-gloss {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, .12);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, .18);
+      color: #fff;
+      font: 700 1.5rem var(--display);
+      padding: 8px 26px;
+      border-radius: 999px;
+      letter-spacing: -.01em;
+      transition: opacity .3s;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    .avatar-gloss:empty {
+      opacity: 0
+    }
+
+    .avatar-hint {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      background: rgba(255, 255, 255, .1);
+      backdrop-filter: blur(8px);
+      color: rgba(255, 255, 255, .6);
+      font: .78rem var(--body);
+      padding: 5px 11px;
+      border-radius: 999px;
+      pointer-events: none;
+    }
+
+    .avatar-badge {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      background: rgba(47, 91, 255, .85);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      font: 700 .78rem var(--body);
+      letter-spacing: .05em;
+      padding: 5px 12px;
+      border-radius: 999px;
+      text-transform: uppercase;
+    }
+
+    section {
+      padding: 88px 0
+    }
+
+    .surface {
+      background: var(--surface);
+      border-block: 1px solid var(--line)
+    }
+
+    .sec-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 32px;
+      flex-wrap: wrap;
+      margin-bottom: 48px
+    }
+
+    .sec-head p {
+      color: var(--muted)
+    }
+
+    .dirs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px
+    }
+
+    .dir {
+      border-radius: var(--radius);
+      padding: 36px;
+      min-height: 280px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between
+    }
+
+    .dir.s {
+      background: var(--sign-soft)
+    }
+
+    .dir.t {
+      background: var(--speech-soft)
+    }
+
+    .dir .path {
+      font: 700 2rem/1.1 var(--display);
+      letter-spacing: -.02em
+    }
+
+    .dir.s .path b {
+      color: var(--sign)
+    }
+
+    .dir.t .path b {
+      color: var(--speech)
+    }
+
+    .dir p {
+      color: var(--muted)
+    }
+
+    .steps {
+      list-style: none;
+      padding: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      counter-reset: s;
+      position: relative
+    }
+
+    .steps li {
+      counter-increment: s;
+      padding: 0 32px 0 0
+    }
+
+    .steps li::before {
+      content: counter(s);
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--bg);
+      font: 700 1.1rem var(--display);
+      margin-bottom: 18px;
+      position: relative;
+      z-index: 1
+    }
+
+    .steps li::after {
+      content: "";
+      position: absolute;
+      top: 22px;
+      height: 2px;
+      background: var(--line);
+      left: 44px;
+      width: calc(33.3% - 44px)
+    }
+
+    .steps li:nth-child(2)::after {
+      left: calc(33.3% + 44px)
+    }
+
+    .steps li:nth-child(3)::after {
+      display: none
+    }
+
+    .steps h3 {
+      margin-bottom: 8px
+    }
+
+    .steps p {
+      color: var(--muted)
+    }
+
+    .priv {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 56px;
+      align-items: start
+    }
+
+    .ledger {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--bg)
+    }
+
+    .ledger div {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--line)
+    }
+
+    .ledger div:last-child {
+      border: 0
+    }
+
+    .ledger span:last-child {
+      font-weight: 600
+    }
+
+    .ok {
+      color: #14915b
+    }
+
+    .hd {
+      background: var(--surface);
+      font-weight: 600;
+      color: var(--muted)
+    }
+
+    details {
+      border-bottom: 1px solid var(--line);
+      padding: 20px 0
+    }
+
+    summary {
+      cursor: pointer;
+      font: 700 1.2rem var(--display);
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px
+    }
+
+    summary::after {
+      content: "+";
+      transition: transform .2s
+    }
+
+    details[open] summary::after {
+      transform: rotate(45deg)
+    }
+
+    details p {
+      color: var(--muted);
+      margin-top: 12px
+    }
+
+    .final {
+      background: var(--ink);
+      color: var(--bg);
+      border-radius: 36px;
+      padding: 72px 40px;
+      text-align: center
+    }
+
+    .final h2 {
+      margin: 0 auto 18px;
+      max-width: 14ch
+    }
+
+    .final p {
+      margin: 0 auto 32px;
+      opacity: .8
+    }
+
+    .final .btn-primary {
+      background: var(--speech);
+      color: #1b1300
+    }
+
+    footer {
+      padding: 40px 0 56px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: .95rem
+    }
+
+    @media(max-width:860px) {
+
+      .hero,
+      .priv,
+      .dirs,
+      .avatar-layout {
+        grid-template-columns: 1fr
+      }
+
+      .avatar-canvas-wrap {
+        aspect-ratio: 4/3
+      }
+
+      .steps {
+        grid-template-columns: 1fr;
+        gap: 32px
+      }
+
+      .steps li::after {
+        display: none
+      }
+
+      .nav-links a:not(.btn) {
+        display: none
+      }
+
+      section {
+        padding: 64px 0
+      }
+    }
+
+    @media(prefers-reduced-motion:reduce) {
+      * {
+        animation: none !important;
+        transition: none !important
+      }
+
+      html {
+        scroll-behavior: auto
+      }
+    }
+
+    /* ==========================================================
+       CAMERA INTERPRETER & MEDIAPIPE BACKEND INTEGRATION
+       ========================================================== */
+    .camera-section {
+      padding: 72px 0 84px;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      scroll-margin-top: 32px;
+    }
+
+    .cam-layout {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 36px;
+      align-items: start;
+    }
+
+    .cam-column {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* THE RECTANGLE ROUNDED CORNER CUTOUT */
+    .cam-box {
+      position: relative;
+      aspect-ratio: 4 / 3;
+      border-radius: 28px;
+      overflow: hidden;
+      background: #070e1c;
+      box-shadow: 0 24px 60px -15px rgba(10, 20, 40, .5), 0 0 0 1px rgba(255, 255, 255, .1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cam-box video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      display: block;
+    }
+
+    .cam-box canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1);
+      pointer-events: none;
+    }
+
+    .cam-badge-row {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .cam-badge {
+      background: rgba(10, 20, 36, .8);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      font: 600 .78rem var(--body);
+      padding: 5px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, .15);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all .2s;
+    }
+
+    .cam-badge.live {
+      background: rgba(16, 185, 129, .25);
+      border-color: #10B981;
+      color: #34D399;
+    }
+
+    .cam-badge.detected {
+      background: rgba(255, 176, 32, .25);
+      border-color: #FFB020;
+      color: #FFD166;
+    }
+
+    .cam-badge.connected {
+      background: rgba(59, 130, 246, .25);
+      border-color: #3B82F6;
+      color: #93C5FD;
+    }
+
+    .cam-badge.error {
+      background: rgba(239, 68, 68, .25);
+      border-color: #EF4444;
+      color: #FCA5A5;
+    }
+
+    .cam-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      color: #9BAAC2;
+      text-align: center;
+      padding: 24px;
+      background: radial-gradient(circle at center, #13223f 0%, #070e1c 85%);
+      z-index: 4;
+      transition: opacity .3s, visibility .3s;
+    }
+
+    .cam-placeholder.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .cam-placeholder-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: rgba(47, 91, 255, .18);
+      color: var(--sign);
+      display: grid;
+      place-items: center;
+      margin-bottom: 4px;
+    }
+
+    .cam-audio-meter {
+      position: absolute;
+      bottom: 12px;
+      left: 16px;
+      right: 16px;
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .2);
+      overflow: hidden;
+      z-index: 5;
+    }
+
+    .cam-audio-meter-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--sign), var(--speech));
+      border-radius: 999px;
+      transition: width .08s ease-out;
+    }
+
+    .cam-action-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .toggle-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font: 500 .85rem var(--body);
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+    }
+
+    .toggle-label input[type="checkbox"] {
+      accent-color: var(--sign);
+      cursor: pointer;
+    }
+
+    .cam-info-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .backend-card {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 22px;
+    }
+
+    .sign-detect-card {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 22px;
+    }
+
+    .detected-hero {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--surface);
+      border: 1.5px solid var(--line);
+      border-radius: 18px;
+      padding: 16px 20px;
+      box-shadow: 0 8px 24px -8px rgba(0,0,0,.08);
+      position: relative;
+      overflow: hidden;
+      transition: border-color .3s, box-shadow .3s;
+    }
+
+    .detected-hero.active {
+      border-color: var(--sign);
+      box-shadow: 0 0 0 3px rgba(47, 91, 255, .2), 0 12px 30px -10px rgba(47, 91, 255, .3);
+      animation: pulse-border 1.5s infinite alternate;
+    }
+
+    @keyframes pulse-border {
+      0% { border-color: var(--sign); }
+      100% { border-color: var(--speech); }
+    }
+
+    .detected-hero-icon {
+      font-size: 2.2rem;
+      line-height: 1;
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      background: var(--sign-soft);
+      flex-shrink: 0;
+    }
+
+    .detected-hero-label {
+      font: 800 1.5rem/1.2 var(--display);
+      color: var(--ink);
+      letter-spacing: -.01em;
+    }
+
+    .detected-hero-meta {
+      font-size: .85rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .detected-hero-confidence {
+      margin-left: auto;
+      font: 700 1.15rem var(--display);
+      color: var(--sign);
+      background: var(--sign-soft);
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+
+    .recognized-stream {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-height: 44px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      align-items: center;
+    }
+
+    .recognized-chip {
+      background: var(--sign-soft);
+      color: var(--sign);
+      font: 700 .85rem var(--display);
+      padding: 5px 12px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      animation: chip-in .25s ease-out;
+    }
+
+    @keyframes chip-in {
+      from { transform: scale(.7); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    @media (max-width: 860px) {
+      .cam-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <nav aria-label="Main">
+      <a class="logo" href="#top" aria-label="SignBridge home">
+        <svg viewBox="0 0 34 34" aria-hidden="true">
+          <path d="M2 24 Q17 4 32 24" fill="none" stroke="var(--sign)" stroke-width="5" stroke-linecap="round" />
+          <path d="M2 24 Q17 14 32 24" fill="none" stroke="var(--speech)" stroke-width="5" stroke-linecap="round" />
+        </svg>
+        SignBridge
+      </a>
+      <div class="nav-links">
+        <a href="#camera-section">Camera Interpreter</a>
+        <a href="#avatar-section">Avatar</a>
+        <a href="#how">How it works</a>
+        <a href="#private">Privacy</a>
+        <a href="#faq">FAQ</a>
+        <a class="btn btn-primary" href="#camera-section">Start Camera</a>
+      </div>
+    </nav>
+
+    <header class="hero" id="top">
+      <div>
+        <h1><span class="a">Sign Language.</span><span>Brought to life.</span></h1>
+        <p class="lead">Type or speak any English sentence and a real-time 3D avatar instantly performs the correct ASL
+          signs. 60+ signs, full A–Z fingerspelling, voice input — no app needed.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="#camera-section">📷 Open Camera Interpreter</a>
+          <a class="btn btn-ghost" href="#avatar-section">Meet the 3D Avatar</a>
+        </div>
+        <p class="fine">Runs entirely in your browser. Camera and microphone stay on your device.</p>
+      </div>
+      <div>
+        <div
+          style="background:var(--avatar-bg);border-radius:28px;padding:36px 28px;text-align:center;position:relative;overflow:hidden;box-shadow:0 32px 80px -24px rgba(15,32,64,.55)">
+          <div style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none">
+            <div
+              style="position:absolute;top:10%;left:15%;width:180px;height:180px;background:radial-gradient(circle,rgba(47,91,255,.35),transparent 70%);border-radius:50%">
+            </div>
+            <div
+              style="position:absolute;bottom:15%;right:10%;width:140px;height:140px;background:radial-gradient(circle,rgba(255,176,32,.3),transparent 70%);border-radius:50%">
+            </div>
+          </div>
+          <div
+            style="font:800 3.8rem/1 var(--display);background:linear-gradient(135deg,#6f8cff,#fff 50%,#ffc247);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:18px;position:relative">
+            ASL</div>
+          <div style="color:rgba(255,255,255,.7);font-size:1rem;margin-bottom:26px;position:relative">American Sign
+            Language</div>
+          <div style="display:flex;flex-wrap:wrap;gap:9px;justify-content:center;position:relative">
+            <span
+              style="background:rgba(255,255,255,.12);color:#fff;padding:7px 16px;border-radius:999px;font:.85rem var(--body)">60+
+              signs</span>
+            <span
+              style="background:rgba(255,255,255,.12);color:#fff;padding:7px 16px;border-radius:999px;font:.85rem var(--body)">Real-time
+              3D</span>
+            <span
+              style="background:rgba(255,255,255,.12);color:#fff;padding:7px 16px;border-radius:999px;font:.85rem var(--body)">Voice
+              input</span>
+            <span
+              style="background:rgba(255,255,255,.12);color:#fff;padding:7px 16px;border-radius:999px;font:.85rem var(--body)">A–Z
+              fingerspell</span>
+          </div>
+        </div>
+      </div>
+    </header>
+  </div>
+
+  <!-- CAMERA INTERPRETER SECTION (MEDIAPIPE & BACKEND) -->
+  <section id="camera-section" class="camera-section">
+    <div class="wrap">
+      <div class="sec-head" style="margin-bottom:32px">
+        <div style="display:inline-flex;align-items:center;gap:8px;background:var(--sign-soft);color:var(--sign);padding:6px 16px;border-radius:999px;font:700 .85rem var(--body);margin-bottom:12px">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--sign);display:inline-block"></span>
+          REAL-TIME SIGN DETECTION
+        </div>
+        <h2>Sign into Camera. Detect in Real-Time.</h2>
+        <p>Uses MediaPipe hand tracking and connects directly to your backend server on any laptop or Wi-Fi network.</p>
+      </div>
+
+      <div class="cam-layout">
+        <!-- LEFT: THE ROUNDED RECTANGLE CAMERA CUTOUT -->
+        <div class="cam-column">
+          <div class="cam-box" id="cam-box">
+            <!-- Badges overlay -->
+            <div class="cam-badge-row">
+              <span id="cam-status-badge" class="cam-badge">⚪ Camera Off</span>
+              <span id="cam-hand-badge" class="cam-badge">✋ No Hand in View</span>
+              <span id="cam-backend-badge" class="cam-badge">🔴 Backend Offline</span>
+            </div>
+
+            <!-- Video element -->
+            <video id="cam-video" autoplay playsinline muted></video>
+
+            <!-- Canvas overlay for hand landmarks skeleton -->
+            <canvas id="cam-overlay"></canvas>
+
+            <!-- Audio Meter -->
+            <div class="cam-audio-meter">
+              <div class="cam-audio-meter-fill" id="cam-audio-fill"></div>
+            </div>
+
+            <!-- Empty / Standby Placeholder -->
+            <div class="cam-placeholder" id="cam-placeholder">
+              <div class="cam-placeholder-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                  <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+              </div>
+              <h3 style="color:#fff;font:700 1.25rem var(--display);margin:0">Camera Standby</h3>
+              <p style="font-size:.9rem;max-width:32ch;margin:0">Allow camera access to detect hand signs in real-time.</p>
+              <button class="btn btn-primary" id="cam-start-hero-btn" type="button" style="box-shadow:0 10px 25px -5px var(--sign)">
+                📷 Start Camera Feed
+              </button>
+            </div>
+          </div>
+
+          <!-- Bottom Camera Action Row -->
+          <div class="cam-action-bar">
+            <button class="btn btn-primary" id="cam-toggle-btn" type="button">📷 Start Camera</button>
+            <button class="btn btn-ghost" id="cam-send-now-btn" type="button">⚡ Send Frame Now</button>
+            <label class="toggle-label" title="Mirror signs directly to the 3D Avatar">
+              <input type="checkbox" id="auto-sync-avatar" checked>
+              <span>Sync with 3D Avatar</span>
+            </label>
+            <label class="toggle-label" title="Automatically speak recognized words aloud">
+              <input type="checkbox" id="auto-speak-tts" checked>
+              <span>🔊 Auto Speak</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- RIGHT: BACKEND CONNECTION & SIGN INTELLIGENCE -->
+        <div class="cam-info-panel">
+          <!-- Backend Connection Card -->
+          <div class="backend-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+              <span style="font:700 1.05rem var(--display);display:flex;align-items:center;gap:8px">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                Connect Backend Server
+              </span>
+              <span id="backend-ping-badge" style="font-size:.78rem;padding:3px 10px;border-radius:999px;background:var(--surface);color:var(--muted)">Not Tested</span>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                  <label for="backend-url" style="font:600 .82rem var(--body);color:var(--muted)">Backend URL (Fix-the-Itch / Other Laptop)</label>
+                  <div style="display:flex;gap:6px">
+                    <button type="button" id="preset-3000" style="background:var(--sign-soft);color:var(--sign);border:none;padding:2px 8px;border-radius:6px;font:600 .75rem var(--body);cursor:pointer">:3000 (Next.js)</button>
+                    <button type="button" id="preset-5000" style="background:var(--surface);color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px;font:600 .75rem var(--body);cursor:pointer">:5000 (Python)</button>
+                    <button type="button" id="btn-sync-pack" style="background:var(--surface);color:var(--ink);border:1px solid var(--line);padding:2px 8px;border-radius:6px;font:600 .75rem var(--body);cursor:pointer">🔄 Sync Pack</button>
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <input id="backend-url" type="text" value="http://localhost:5000" placeholder="e.g. http://192.168.1.45:5000" style="flex:1;padding:10px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font:500 .9rem var(--body)">
+                  <button class="btn btn-primary" id="backend-test-btn" type="button" style="padding:0 16px;white-space:nowrap;font-size:.9rem">⚡ Connect</button>
+                </div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div>
+                  <label for="backend-mode" style="font:600 .82rem var(--body);color:var(--muted);display:block;margin-bottom:6px">Backend Route</label>
+                  <select id="backend-mode" style="width:100%;padding:10px 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font:500 .88rem var(--body)">
+                    <option value="/predict">POST /predict (Frames & Landmarks)</option>
+                    <option value="/detect">POST /detect (MediaPipe)</option>
+                    <option value="/api/compose">POST /api/compose (NLP)</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="stream-interval" style="font:600 .82rem var(--body);color:var(--muted);display:block;margin-bottom:6px">Streaming Rate</label>
+                  <select id="stream-interval" style="width:100%;padding:10px 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font:500 .88rem var(--body)">
+                    <option value="150">Every 150ms (~7 FPS)</option>
+                    <option value="250" selected>Every 250ms (4 FPS - Smooth)</option>
+                    <option value="500">Every 500ms (2 FPS)</option>
+                    <option value="manual">Manual only</option>
+                  </select>
+                </div>
+              </div>
+
+              <div id="backend-status-msg" style="font-size:.82rem;color:var(--muted);padding:8px 12px;background:var(--surface);border-radius:8px">
+                💡 Tip: Ensure your other laptop's server binds to <code>0.0.0.0</code> and has CORS enabled.
+              </div>
+            </div>
+          </div>
+
+          <!-- Detected Signs Card -->
+          <div class="sign-detect-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+              <span style="font:700 1.05rem var(--display)">Detected Sign</span>
+              <span id="detection-source" style="font-size:.78rem;color:var(--muted)">MediaPipe Tracking</span>
+            </div>
+
+            <!-- Big detected sign hero card -->
+            <div class="detected-hero" id="detected-hero">
+              <div class="detected-hero-icon" id="detected-hero-icon">✋</div>
+              <div>
+                <div class="detected-hero-label" id="detected-hero-label">Waiting for signs...</div>
+                <div class="detected-hero-meta" id="detected-hero-meta">Show your hand into the camera</div>
+              </div>
+              <div class="detected-hero-confidence" id="detected-hero-conf">--%</div>
+            </div>
+
+            <!-- History of recognized sign words -->
+            <div style="margin-top:16px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <span style="font:600 .85rem var(--body);color:var(--muted)">Recognized Sign Queue</span>
+                <button id="clear-signs-btn" type="button" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;text-decoration:underline">Clear</button>
+              </div>
+              <div class="recognized-stream" id="recognized-stream">
+                <span style="color:var(--muted);font-size:.88rem">Signs you perform will appear here...</span>
+              </div>
+            </div>
+
+            <!-- Composed Sentence Result -->
+            <div style="margin-top:16px;background:var(--surface);border-radius:14px;padding:14px 16px;border:1px solid var(--line)">
+              <div style="font:600 .8rem var(--body);color:var(--muted);margin-bottom:4px">Translated Spoken Sentence:</div>
+              <div id="composed-sentence" style="font:700 1.05rem var(--body);color:var(--ink);min-height:26px">
+                —
+              </div>
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button class="btn btn-ghost" id="speak-sentence-btn" type="button" style="padding:6px 14px;font-size:.82rem">🔊 Speak Aloud</button>
+                <button class="btn btn-ghost" id="avatar-mirror-btn" type="button" style="padding:6px 14px;font-size:.82rem">🤖 Replay on 3D Avatar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3D AVATAR SECTION -->
+  <section id="avatar-section"
+    style="padding:80px 0;background:linear-gradient(180deg,var(--bg) 0%,var(--surface) 100%)">
+    <div class="wrap">
+      <div class="avatar-layout">
+        <div class="avatar-controls">
+          <h2>3D Sign Language Avatar</h2>
+          <p>Type an English sentence, press <strong>Sign it</strong>, and the avatar performs each word in ASL. Unknown
+            words are automatically fingerspelled A–Z.</p>
+          <div>
+            <label for="sign-input"
+              style="font:600 .9rem var(--body);color:var(--muted);display:block;margin-bottom:8px">English text to
+              sign</label>
+            <div class="input-row">
+              <input id="sign-input" type="text" placeholder="e.g. hello how are you" autocomplete="off"
+                spellcheck="false">
+              <button id="sign-go" type="button">Sign it ✦</button>
+            </div>
+          </div>
+          <div class="mic-row">
+            <button id="mic-btn" type="button">🎤 Speak</button>
+            <button id="speak-btn" type="button">🔊 Hear it</button>
+          </div>
+          <div>
+            <div style="font:600 .9rem var(--body);color:var(--muted);margin-bottom:10px">Signing queue</div>
+            <div class="word-chips" id="word-chips" aria-live="polite"></div>
+          </div>
+          <div class="sign-status" id="sign-status" aria-live="polite"></div>
+          <div>
+            <div style="font:600 .9rem var(--body);color:var(--muted);margin-bottom:10px">Quick phrases</div>
+            <div class="sign-library" id="lib-chips"></div>
+          </div>
+          <div>
+            <div style="font:600 .9rem var(--body);color:var(--muted);margin-bottom:10px">Sign library — click any to
+              preview</div>
+            <div class="sign-library" id="sign-chips"></div>
+          </div>
+          <div
+            style="font-size:.85rem;color:var(--muted);line-height:1.5;border-top:1px solid var(--line);padding-top:16px">
+            <strong>Drag</strong> the avatar left/right to rotate. Unknown words are fingerspelled letter by letter
+            (A–Z).
+          </div>
+        </div>
+        <div class="avatar-canvas-wrap" id="avatar-wrap">
+          <div class="avatar-badge">LIVE 3D</div>
+          <div class="avatar-hint">drag to rotate</div>
+          <canvas id="avatar-canvas"></canvas>
+          <div class="avatar-gloss" id="avatar-gloss"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="surface" id="how">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>Both people talk. Neither waits.</h2>
+        <p>SignBridge turns one phone into a shared space. Signs become spoken words. Spoken words become signs.</p>
+      </div>
+      <div class="dirs">
+        <div class="dir s">
+          <div class="path"><b>Type/Speak</b> to sign</div>
+          <p>Type or speak a sentence. The 3D avatar signs it immediately in ASL with full hand and body animation.</p>
+        </div>
+        <div class="dir t">
+          <div class="path"><b>Speech</b> to signs</div>
+          <p>Tap the microphone. Your browser converts speech to text and the avatar signs every word instantly.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>Ready in three steps</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <h3>Open the page</h3>
+          <p>No install, no sign-up. Loads instantly in any modern browser.</p>
+        </li>
+        <li>
+          <h3>Type or speak</h3>
+          <p>Enter an English sentence or tap the microphone button to speak.</p>
+        </li>
+        <li>
+          <h3>Watch the avatar</h3>
+          <p>The 3D avatar performs every sign in real time. Unknown words are fingerspelled.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="surface" id="private">
+    <div class="wrap priv">
+      <div>
+        <h2>Your conversation stays on your phone</h2>
+        <p style="margin-top:20px;color:var(--muted)">All gesture animation runs locally using Three.js. Nothing is
+          uploaded, recorded, or stored.</p>
+      </div>
+      <div class="ledger" role="table" aria-label="What leaves your device">
+        <div class="hd" role="row"><span>Data</span><span>Leaves your phone?</span></div>
+        <div role="row"><span>Camera video</span><span class="ok">No</span></div>
+        <div role="row"><span>Hand and gesture data</span><span class="ok">No</span></div>
+        <div role="row"><span>Translated sentences</span><span class="ok">No</span></div>
+        <div role="row"><span>Personal account info</span><span class="ok">None collected</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap" style="max-width:820px">
+      <div class="sec-head">
+        <h2>Questions</h2>
+      </div>
+      <details>
+        <summary>Do I need to install anything?</summary>
+        <p>No. SignBridge runs in your browser. Open the page and start typing or speaking immediately.</p>
+      </details>
+      <details>
+        <summary>What happens to text I type or speech I speak?</summary>
+        <p>Everything is processed locally. No text, audio, or video ever leaves your device.</p>
+      </details>
+      <details>
+        <summary>What sign languages are supported?</summary>
+        <p>The avatar currently signs American Sign Language (ASL). Unknown words are automatically fingerspelled
+          letter-by-letter using the ASL manual alphabet (A–Z).</p>
+      </details>
+      <details>
+        <summary>Can I use my voice?</summary>
+        <p>Yes — tap the microphone button. Your browser converts speech to text locally, then the avatar signs it
+          immediately.</p>
+      </details>
+      <details>
+        <summary>How accurate are the signs?</summary>
+        <p>Signs are based on published ASL resources. Always have a Deaf signer review before using in medical, legal,
+          or safety-critical contexts.</p>
+      </details>
+    </div>
+  </section>
+
+  <section id="start" style="padding-top:0">
+    <div class="wrap">
+      <div class="final">
+        <h2>Make the next conversation easy</h2>
+        <p style="max-width:44ch">Type a sentence and the 3D avatar signs it. No app, no account, no silence.</p>
+        <a class="btn btn-primary" href="#avatar-section">Meet the 3D Avatar</a>
+      </div>
+      <footer><span>© 2026 SignBridge</span><span>One phone. Two languages. Zero silence.</span></footer>
+    </div>
+  </section>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    /* ── SIGN LIBRARY ── */
+    const SH = {
+      B: [0.3, 0, 0, 0, 0, 3], FIST: [0.7, 1, 1, 1, 1, 0], A: [0, 1, 1, 1, 1, 0],
+      POINT: [0.8, 0, 1, 1, 1, 0], FIVE: [0, 0, 0, 0, 0, 18], L: [0, 0, 1, 1, 1, 0],
+      BENTL: [0, 0.5, 1, 1, 1, 0], RELAX: [0.4, 0.4, 0.4, 0.4, 0.4, 4],
+      FS_A: [0, 1, 1, 1, 1, 0], FS_B: [0.3, 0, 0, 0, 0, 0], FS_C: [0.5, 0.5, 0.5, 0.5, 0.5, 6],
+      FS_D: [0.8, 0, 1, 1, 1, 0], FS_E: [0.7, 0.7, 0.7, 0.7, 0.7, 0], FS_F: [0.8, 0.9, 0, 0, 0, 10],
+      FS_G: [0.8, 0, 1, 1, 1, 0], FS_H: [0.8, 0, 0, 1, 1, 0], FS_I: [0.8, 1, 1, 1, 0, 0],
+      FS_J: [0.8, 1, 1, 1, 0, 0], FS_K: [0.8, 0, 0, 1, 1, 0], FS_L: [0, 0, 1, 1, 1, 0],
+      FS_M: [0.7, 0.8, 0.8, 0.8, 1, 0], FS_N: [0.7, 0.8, 0.8, 1, 1, 0], FS_O: [0.5, 0.6, 0.6, 0.6, 0.6, 0],
+      FS_P: [0.8, 0, 0.7, 1, 1, 0], FS_Q: [0.8, 0, 1, 1, 1, 0], FS_R: [0.8, 0, 0, 1, 1, 0],
+      FS_S: [0.7, 1, 1, 1, 1, 0], FS_T: [0.7, 1, 1, 1, 1, 0], FS_U: [0.8, 0, 0, 1, 1, 0],
+      FS_V: [0.8, 0, 0, 1, 1, 10], FS_W: [0.8, 0, 0, 0, 1, 8], FS_X: [0.8, 0.5, 1, 1, 1, 0],
+      FS_Y: [0, 1, 1, 1, 0, 0], FS_Z: [0.8, 0, 1, 1, 1, 0],
+    };
+    const P = (s, x, y, r = 0) => ({ s: SH[s], x, y, r });
+    const REST = { R: P('RELAX', 105, 292, 8), L: P('RELAX', 295, 292, -8) };
+    const st = (ms, R, L) => ({ ms, R: R || REST.R, L: L || REST.L });
+    const KILL = [st(400, P('POINT', 232, 208, 80), P('B', 268, 190, -88)), st(350, P('POINT', 188, 200, 80), P('B', 268, 190, -88))];
+    const SELF = [st(350, P('A', 178, 182)), st(200, P('A', 178, 176)), st(200, P('A', 178, 182))];
+    const SIGNS = {
+      HELLO: { face: 'smile', steps: [st(450, P('B', 128, 52, 25)), st(450, P('B', 84, 42, 60))] },
+      HI: { face: 'smile', steps: [st(350, P('FIVE', 120, 80, 20)), st(350, P('FIVE', 100, 70, 35)), st(350, P('FIVE', 120, 80, 20))] },
+      HOW: { face: 'ask', steps: [st(450, P('FIST', 172, 205, 25), P('FIST', 228, 205, -25)), st(550, P('FIVE', 150, 222, -35), P('FIVE', 250, 222, 35))] },
+      YOU: { face: 'neutral', steps: [st(350, P('POINT', 150, 215)), st(300, P('POINT', 150, 190))] },
+      ME: { face: 'neutral', steps: [st(350, P('POINT', 200, 200, 20)), st(300, P('POINT', 200, 195, 20))] },
+      I: { face: 'neutral', steps: [st(350, P('POINT', 200, 195, 15)), st(300, P('POINT', 200, 190, 15))] },
+      FINE: { face: 'smile', steps: [st(450, P('FIVE', 172, 185, 15)), st(250, P('FIVE', 178, 178, 15))] },
+      GOOD: { face: 'smile', steps: [st(400, P('B', 192, 120, 10)), st(450, P('B', 165, 168, -10))] },
+      BAD: { face: 'pain', steps: [st(350, P('B', 192, 120, 10)), st(400, P('B', 155, 185, -25))] },
+      THANKS: { face: 'smile', steps: [st(400, P('B', 192, 115, 10)), st(450, P('B', 160, 160, -15))] },
+      PLEASE: { face: 'neutral', steps: [st(350, P('B', 192, 190, 0)), st(350, P('B', 175, 175, 15)), st(350, P('B', 192, 190, 0))] },
+      SORRY: { face: 'sad', steps: [st(400, P('FIST', 188, 190, 0)), st(400, P('FIST', 175, 175, 15)), st(400, P('FIST', 188, 190, 0))] },
+      YES: { face: 'smile', steps: [st(300, P('FIST', 200, 195)), st(250, P('FIST', 200, 215)), st(300, P('FIST', 200, 195))] },
+      NO: { face: 'neutral', steps: [st(300, P('L', 200, 200, 0)), st(250, P('FIST', 200, 200)), st(300, P('L', 200, 200, 0))] },
+      HELP: { face: 'ask', steps: [st(500, P('A', 172, 240), P('B', 228, 260, -10)), st(500, P('A', 172, 195), P('B', 228, 215, -10))] },
+      HOSPITAL: { face: 'neutral', steps: [st(400, P('FS_H', 230, 160, 20)), st(400, P('FS_H', 230, 200, 20)), st(350, P('FS_H', 210, 180, 20)), st(350, P('FS_H', 250, 180, 20))] },
+      'THANK YOU': { face: 'smile', steps: [st(400, P('B', 192, 115, 10)), st(450, P('B', 160, 160, -15))] },
+      NEED: { face: 'neutral', steps: [st(400, P('POINT', 200, 180, 0)), st(350, P('POINT', 200, 200, 30)), st(350, P('POINT', 200, 180, 0))] },
+      WANT: { face: 'neutral', steps: [st(450, P('FIVE', 150, 190, -20), P('FIVE', 250, 190, 20)), st(500, P('FIVE', 170, 220, -10), P('FIVE', 230, 220, 10))] },
+      LOVE: { face: 'smile', steps: [st(500, P('FIST', 155, 175, 40), P('FIST', 245, 175, -40)), st(450, P('FIST', 170, 180, 30), P('FIST', 230, 180, -30))] },
+      NAME: { face: 'neutral', steps: [st(500, P('L', 165, 210, 0), P('L', 235, 210, 0)), st(450, P('L', 165, 200, -20), P('L', 235, 200, 20))] },
+      WHAT: { face: 'ask', steps: [st(350, P('POINT', 160, 210), P('POINT', 240, 210)), st(350, P('POINT', 175, 210), P('POINT', 225, 210)), st(350, P('POINT', 160, 210), P('POINT', 240, 210))] },
+      WHERE: { face: 'ask', steps: [st(350, P('POINT', 185, 205)), st(350, P('POINT', 215, 205)), st(350, P('POINT', 185, 205))] },
+      WHEN: { face: 'ask', steps: [st(400, P('POINT', 175, 210, 0), P('POINT', 225, 210, 0)), st(400, P('POINT', 200, 195, 90), P('POINT', 200, 215, -90))] },
+      WHY: { face: 'ask', steps: [st(400, P('BENTL', 188, 100, 15)), st(450, P('BENTL', 170, 155, -10))] },
+      WHO: { face: 'ask', steps: [st(450, P('L', 188, 140, 10)), st(400, P('L', 182, 135, 20))] },
+      DOG: { face: 'neutral', steps: [st(350, P('B', 128, 262)), st(200, P('B', 128, 246)), st(200, P('B', 128, 262)), st(300, P('A', 128, 240, 15))] },
+      CAT: { face: 'smile', steps: [st(400, P('L', 145, 145)), st(400, P('L', 115, 145))] },
+      WATER: { face: 'neutral', steps: [st(350, P('FS_W', 190, 130)), st(300, P('FS_W', 190, 140)), st(300, P('FS_W', 190, 130))] },
+      FOOD: { face: 'neutral', steps: [st(400, P('FS_O', 195, 135)), st(300, P('FS_O', 195, 145)), st(300, P('FS_O', 195, 135))] },
+      EAT: { face: 'neutral', steps: [st(400, P('FS_O', 195, 135)), st(300, P('FS_O', 195, 145)), st(300, P('FS_O', 195, 135))] },
+      DRINK: { face: 'neutral', steps: [st(450, P('FS_C', 172, 170, 30)), st(450, P('FS_C', 185, 125, 10))] },
+      HOME: { face: 'neutral', steps: [st(400, P('FS_O', 160, 140)), st(400, P('FS_O', 145, 120))] },
+      SCHOOL: { face: 'neutral', steps: [st(300, P('B', 175, 220), P('B', 225, 220)), st(300, P('B', 185, 215), P('B', 215, 215)), st(300, P('B', 175, 220), P('B', 225, 220))] },
+      WORK: { face: 'neutral', steps: [st(350, P('FIST', 175, 210), P('FIST', 225, 210)), st(300, P('FIST', 185, 205), P('FIST', 215, 205)), st(300, P('FIST', 175, 210), P('FIST', 225, 210))] },
+      PLAY: { face: 'smile', steps: [st(400, P('FS_Y', 162, 220, 20), P('FS_Y', 238, 220, -20)), st(400, P('FS_Y', 162, 220, -20), P('FS_Y', 238, 220, 20))] },
+      SLEEP: { face: 'neutral', steps: [st(600, P('FIVE', 180, 70, 15)), st(600, P('FIST', 200, 130, 0))] },
+      TIRED: { face: 'sad', steps: [st(500, P('BENTL', 152, 185, -20), P('BENTL', 248, 185, 20)), st(500, P('BENTL', 148, 215, -30), P('BENTL', 252, 215, 30))] },
+      HAPPY: { face: 'smile', steps: [st(350, P('B', 185, 195, 0)), st(350, P('B', 182, 175, 5)), st(300, P('B', 185, 195, 0))] },
+      SAD: { face: 'sad', steps: [st(600, P('FIVE', 162, 90, 0), P('FIVE', 238, 90, 0)), st(600, P('FIVE', 162, 165, 0), P('FIVE', 238, 165, 0))] },
+      ANGRY: { face: 'pain', steps: [st(400, P('BENTL', 185, 120, 0)), st(400, P('BENTL', 172, 165, 0))] },
+      SCARED: { face: 'pain', steps: [st(350, P('FIVE', 145, 190, -15), P('FIVE', 255, 190, 15)), st(350, P('FIVE', 165, 190, -5), P('FIVE', 235, 190, 5))] },
+      RUN: { face: 'neutral', steps: [0, 1, 0, 1].map(u => st(300, P('BENTL', 238, u ? 195 : 215, -70), P('BENTL', 262, u ? 185 : 205, -8))) },
+      WALK: { face: 'neutral', steps: [st(350, P('B', 162, 235, -20), P('B', 238, 255, 20)), st(350, P('B', 162, 255, 20), P('B', 238, 235, -20))] },
+      STOP: { face: 'neutral', steps: [st(500, P('B', 175, 220, -90), P('B', 215, 240, 0)), st(400, P('B', 195, 220, -90), P('B', 215, 240, 0))] },
+      GO: { face: 'neutral', steps: [st(400, P('POINT', 170, 215, 60), P('POINT', 230, 215, -60)), st(400, P('POINT', 155, 200, 75), P('POINT', 245, 200, -75))] },
+      COME: { face: 'neutral', steps: [st(400, P('POINT', 150, 200, 70), P('POINT', 250, 200, -70)), st(400, P('POINT', 170, 215, 60), P('POINT', 230, 215, -60))] },
+      LOOK: { face: 'neutral', steps: [st(450, P('FIVE', 185, 105, 0)), st(450, P('FS_V', 165, 175, -15))] },
+      KNOW: { face: 'neutral', steps: [st(400, P('BENTL', 185, 90, 0)), st(350, P('BENTL', 185, 97, 0))] },
+      THINK: { face: 'neutral', steps: [st(400, P('POINT', 175, 95, 0)), st(400, P('POINT', 188, 88, -30))] },
+      UNDERSTAND: { face: 'smile', steps: [st(350, P('FIST', 182, 92)), st(350, P('POINT', 182, 80))] },
+      LEARN: { face: 'neutral', steps: [st(500, P('B', 225, 242, -10), P('FIVE', 215, 242, 10)), st(500, P('BENTL', 185, 92, 0))] },
+      BACK: { face: 'neutral', steps: [st(500, P('POINT', 86, 150, -50)), st(300, P('POINT', 70, 172, -60))] },
+      HURT: { face: 'pain', steps: [150, 165, 150, 165].map(x => st(220, P('POINT', x, 200, 75), P('POINT', 400 - x, 200, -75))) },
+      PAIN: { face: 'pain', steps: [150, 165, 150, 165].map(x => st(220, P('POINT', x, 200, 75), P('POINT', 400 - x, 200, -75))) },
+      NECK: { face: 'neutral', steps: [st(400, P('POINT', 182, 125, 35)), st(200, P('POINT', 182, 131, 35)), st(200, P('POINT', 182, 125, 35))] },
+      SWELL: { face: 'neutral', steps: [st(450, P('FIST', 172, 132, 20), P('FIST', 228, 132, -20)), st(600, P('FIVE', 130, 128, -30), P('FIVE', 270, 128, 30))] },
+      KILL: { face: 'neutral', steps: KILL }, SELF: { face: 'neutral', steps: SELF }, SUICIDE: { face: 'sad', steps: [...KILL, ...SELF] },
+      DAY: { face: 'neutral', steps: [st(600, P('POINT', 155, 220, 70)), st(600, P('POINT', 245, 100, -20))] },
+      NIGHT: { face: 'neutral', steps: [st(600, P('BENTL', 220, 80, -20)), st(600, P('BENTL', 155, 160, 30))] },
+      TODAY: { face: 'neutral', steps: [st(400, P('FS_Y', 162, 230, 0), P('FS_Y', 238, 230, 0)), st(600, P('POINT', 155, 220, 70)), st(600, P('POINT', 245, 100, -20))] },
+      TOMORROW: { face: 'neutral', steps: [st(500, P('A', 158, 145, 15)), st(500, P('A', 145, 130, 40))] },
+      MORNING: { face: 'smile', steps: [st(500, P('BENTL', 175, 215, 0)), st(500, P('B', 175, 155, -15))] },
+      AFTERNOON: { face: 'neutral', steps: [st(600, P('B', 172, 205, -20)), st(600, P('B', 172, 175, -40))] },
+      EVENING: { face: 'neutral', steps: [st(600, P('BENTL', 210, 170, -30)), st(600, P('BENTL', 220, 195, -15))] },
+      MORE: { face: 'neutral', steps: [st(350, P('FS_O', 175, 220), P('FS_O', 225, 220)), st(300, P('FS_O', 182, 215), P('FS_O', 218, 215)), st(300, P('FS_O', 175, 220), P('FS_O', 225, 220))] },
+      WITH: { face: 'neutral', steps: [st(400, P('A', 155, 225), P('A', 245, 225)), st(400, P('A', 180, 225), P('A', 220, 225))] },
+      NOT: { face: 'neutral', steps: [st(400, P('A', 185, 148, 0)), st(350, P('A', 155, 165, -10))] },
+      AGAIN: { face: 'neutral', steps: [st(400, P('BENTL', 198, 240, 0), P('B', 202, 242, 0)), st(400, P('BENTL', 198, 225, 0), P('B', 202, 240, 0))] },
+      ARE: { face: 'ask', steps: [st(450, P('FIST', 172, 205, 25), P('FIST', 228, 205, -25)), st(550, P('FIVE', 150, 222, -35), P('FIVE', 250, 222, 35))] },
+      FRIEND: { face: 'smile', steps: [st(500, P('POINT', 175, 225, 90), P('POINT', 225, 225, -90)), st(500, P('POINT', 175, 225, -90), P('POINT', 225, 225, 90))] },
+      FAMILY: { face: 'smile', steps: [st(600, P('FS_F', 160, 210, 0), P('FS_F', 240, 210, 0)), st(600, P('FS_F', 145, 220, -20), P('FS_F', 255, 220, 20))] },
+      MOTHER: { face: 'neutral', steps: [st(400, P('FIVE', 190, 148, 0)), st(300, P('FIVE', 190, 155, 0))] },
+      FATHER: { face: 'neutral', steps: [st(400, P('FIVE', 190, 88, 0)), st(300, P('FIVE', 190, 95, 0))] },
+      BABY: { face: 'smile', steps: [st(600, P('B', 170, 235, 20), P('B', 230, 215, -20)), st(600, P('B', 170, 215, 10), P('B', 230, 235, -10))] },
+      MONEY: { face: 'neutral', steps: [st(350, P('B', 200, 245, 0), P('B', 200, 245, 0)), st(300, P('B', 190, 240, 5), P('B', 200, 245, 0)), st(300, P('B', 200, 245, 0), P('B', 200, 245, 0))] },
+    };
+
+    const FS_MAP = {};
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(c => {
+      const k = 'FS_' + c;
+      if (SH[k]) FS_MAP[c] = { face: 'neutral', steps: [st(350, P(k, 200, 200)), st(300, P(k, 200, 195))] };
+    });
+
+    const LEX = {
+      hi: 'HI', hello: 'HELLO', hey: 'HELLO', how: 'HOW', you: 'YOU', fine: 'FINE', good: 'GOOD', bad: 'BAD',
+      thanks: 'THANKS', thank: 'THANKS', please: 'PLEASE', sorry: 'SORRY', yes: 'YES', no: 'NO',
+      help: 'HELP', need: 'NEED', want: 'WANT', love: 'LOVE', name: 'NAME',
+      what: 'WHAT', where: 'WHERE', when: 'WHEN', why: 'WHY', who: 'WHO',
+      dog: 'DOG', cat: 'CAT', water: 'WATER', food: 'FOOD', eat: 'EAT', drink: 'DRINK',
+      home: 'HOME', school: 'SCHOOL', hospital: 'HOSPITAL', work: 'WORK', play: 'PLAY', sleep: 'SLEEP', tired: 'TIRED',
+      happy: 'HAPPY', sad: 'SAD', angry: 'ANGRY', scared: 'SCARED',
+      run: 'RUN', runs: 'RUN', running: 'RUN', walk: 'WALK', stop: 'STOP', go: 'GO', come: 'COME',
+      look: 'LOOK', see: 'LOOK', know: 'KNOW', think: 'THINK', understand: 'UNDERSTAND', learn: 'LEARN',
+      back: 'BACK', hurt: 'HURT', hurts: 'HURT', pain: 'PAIN', neck: 'NECK',
+      swelling: 'SWELL', swollen: 'SWELL', swell: 'SWELL', kill: 'KILL', self: 'SELF', suicide: 'SUICIDE',
+      me: 'ME', i: 'I', my: 'ME', mine: 'ME', am: 'FINE', are: 'ARE',
+      day: 'DAY', night: 'NIGHT', today: 'TODAY', tomorrow: 'TOMORROW',
+      morning: 'MORNING', afternoon: 'AFTERNOON', evening: 'EVENING',
+      more: 'MORE', with: 'WITH', not: 'NOT', again: 'AGAIN',
+      friend: 'FRIEND', family: 'FAMILY', mother: 'MOTHER', mom: 'MOTHER',
+      father: 'FATHER', dad: 'FATHER', baby: 'BABY', money: 'MONEY',
+    };
+
+    const PHRASES = [
+      { label: 'Hello, how are you?', text: 'hello how are you' },
+      { label: 'Thank you!', text: 'thank you' },
+      { label: 'I love you', text: 'i love you' },
+      { label: 'I need help', text: 'i need help' },
+      { label: 'Please stop', text: 'please stop' },
+      { label: 'I am sorry', text: 'i am sorry' },
+      { label: 'Good morning', text: 'good morning' },
+      { label: 'My back hurts', text: 'my back hurts' },
+      { label: 'Where is home?', text: 'where home' },
+      { label: 'Yes, I understand', text: 'yes i understand' },
+    ];
+
+    function tokenize(t) {
+      const words = t.split(' ').filter(Boolean), items = [];
+      for (const w of words) {
+        const sk = LEX[w];
+        if (sk && SIGNS[sk]) { items.push({ word: w, key: sk, sign: SIGNS[sk] }); }
+        else { for (const c of w.toUpperCase()) { const l = FS_MAP[c]; if (l) items.push({ word: c, key: c, sign: l }); } }
+      }
+      return items;
+    }
+
+    function interpret(text) {
+      const t = text.toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (/how (are|r) (you|u)/.test(t)) return { items: tokenize('hello fine thanks you'), reply: 'Hello! Fine, thank you. And you?' };
+      const items = tokenize(t);
+      if (!items.length) return { items: [], reply: 'No recognizable signs. Try "hello how are you" or "I love you".' };
+      return { items, reply: items.map(i => i.key).join(' ') };
+    }
+
+    /* ── THREE.JS AVATAR ── */
+    const SKIN_C = 0xf1c6a5, SHIRT_C = 0x2f5bff, INK_C = 0x10213a;
+    const FX = [-0.18, -0.06, 0.06, 0.18], FL = [0.34, 0.38, 0.35, 0.28], BEND = [80, 95, 70], FR = [0.5, 0.3, 0.25];
+    const rad = d => (d * Math.PI) / 180;
+    const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0.05 });
+    const U = 0.01;
+
+    function chain(parent, lens, r, skin) {
+      const base = new THREE.Group(); parent.add(base);
+      const joints = []; let at = base;
+      lens.forEach(len => {
+        const j = new THREE.Group();
+        const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 5, 10), skin);
+        m.position.y = len / 2; j.add(m);
+        const tip = new THREE.Group(); tip.position.y = len; j.add(tip);
+        at.add(j); joints.push(j); at = tip;
+      });
+      return { base, joints };
+    }
+
+    function makeHand(left, skin) {
+      const root = new THREE.Group(); root.scale.setScalar(0.78);
+      root.add(new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.60, 0.16), skin));
+      const fingers = FX.map((x, i) => {
+        const h = new THREE.Group(); h.position.set(x, 0.26, 0); root.add(h);
+        return chain(h, FR.map(f => FL[i] * f), 0.055, skin);
+      });
+      const th = new THREE.Group(); th.position.set(left ? 0.22 : -0.22, -0.02, 0.02); root.add(th);
+      return { root, fingers, thumb: chain(th, [0.2, 0.17], 0.06, skin), left };
+    }
+
+    function applyPose(h, p) {
+      if (!p || !p.s) return;
+      h.root.position.set((p.x - 200) * U, (160 - p.y) * U, 0.55);
+      h.root.rotation.set(0, 0, -rad(p.r));
+      const sp = p.s[5];
+      h.fingers.forEach((f, i) => {
+        f.base.rotation.z = -rad(((i - 1.5) * sp) / 1.5);
+        f.joints.forEach((j, k) => { if (BEND[k] !== undefined) j.rotation.x = rad(p.s[i + 1] * BEND[k]); });
+      });
+      h.thumb.base.rotation.z = -rad(-50 + p.s[0] * 55) * (h.left ? -1 : 1);
+      h.thumb.joints[0].rotation.x = rad(p.s[0] * 40);
+      h.thumb.joints[1].rotation.x = rad(p.s[0] * 50);
+    }
+
+    function makeBody(skin) {
+      const g = new THREE.Group(), inkM = mat(INK_C);
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.60, 0.90, 8, 20), mat(SHIRT_C));
+      torso.scale.set(1, 1, 0.55); torso.position.y = -0.85;
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.35, 18), skin); neck.position.y = 0.5;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.40, 36, 28), skin); head.position.y = 0.9;
+      const eyes = [-1, 1].map(s => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.048, 14, 14), inkM); e.position.set(s * 0.155, 0.95, 0.365); return e; });
+      const brows = [-1, 1].map(s => { const b = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.038, 0.03), inkM); b.position.set(s * 0.155, 1.075, 0.38); return b; });
+      const mouth = new THREE.Group(); mouth.position.set(0, 0.73, 0.38);
+      const shapes = {
+        line: new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.03), inkM),
+        smile: new THREE.Mesh(new THREE.TorusGeometry(0.10, 0.018, 8, 24, Math.PI), inkM),
+        frown: new THREE.Mesh(new THREE.TorusGeometry(0.10, 0.018, 8, 24, Math.PI), inkM),
+        o: new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 14), inkM),
+      };
+      shapes.smile.rotation.z = Math.PI; shapes.smile.position.y = 0.05; shapes.frown.position.y = -0.05;
+      Object.values(shapes).forEach(m => mouth.add(m));
+      g.add(torso, neck, head, mouth, ...eyes, ...brows);
+      return {
+        group: g, torso,
+        setFace(fk = 'neutral', open = 1, blink = false) {
+          const F3 = { neutral: { b: 0, l: 0, m: 'line' }, smile: { b: 0, l: 0, m: 'smile' }, ask: { b: 0, l: 0.05, m: 'o' }, pain: { b: 0.4, l: 0, m: 'frown' }, sad: { b: 0.3, l: 0, m: 'frown' } };
+          const f = F3[fk] || F3.neutral;
+          brows[0].rotation.z = f.b; brows[1].rotation.z = -f.b;
+          brows.forEach(b => b.position.y = 1.075 + f.l);
+          Object.entries(shapes).forEach(([k, m]) => m.visible = (k === f.m));
+          mouth.scale.y = open; eyes.forEach(e => e.scale.y = blink ? 0.08 : 1);
+        }
+      };
+    }
+
+    const canvas = document.getElementById('avatar-canvas');
+    const wrap2 = document.getElementById('avatar-wrap');
+    let renderer;
+    try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); }
+    catch (e) { wrap2.innerHTML = '<p style="color:#fff;padding:32px;text-align:center">WebGL unavailable in this browser.</p>'; throw e; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
+
+    const scene = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(34, 1.25, 0.1, 50);
+    cam.position.set(0, 0.25, 5.4); cam.lookAt(0, 0.1, 0);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8899bb, 1.2));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(2, 4, 4); scene.add(sun);
+    const fill = new THREE.DirectionalLight(0x7090ff, 0.4); fill.position.set(-3, 1, 2); scene.add(fill);
+
+    const skinM = mat(SKIN_C);
+    const body = makeBody(skinM);
+    const R = makeHand(false, skinM);
+    const L = makeHand(true, skinM);
+    const world = new THREE.Group(); world.add(body.group, R.root, L.root); scene.add(world);
+
+    function resize() { const w = wrap2.clientWidth, h = wrap2.clientHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); }
+    resize(); new ResizeObserver(resize).observe(wrap2);
+
+    let drag = null;
+    canvas.addEventListener('pointerdown', e => { drag = e.clientX; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', e => { if (drag === null) return; world.rotation.y = Math.max(-0.7, Math.min(0.7, world.rotation.y + (e.clientX - drag) * 0.012)); drag = e.clientX; });
+    canvas.addEventListener('pointerup', () => drag = null);
+
+    const live = { poseR: REST.R, poseL: REST.L, face: 'neutral', gloss: '' };
+    const clock = new THREE.Clock();
+    (function loop() {
+      requestAnimationFrame(loop);
+      const t = clock.getElapsedTime();
+      applyPose(R, live.poseR); applyPose(L, live.poseL);
+      body.setFace(live.face, live.gloss ? 1 + 0.3 * Math.sin(t * 14) : 1, t % 3.6 < 0.12);
+      body.torso.scale.y = 1 + 0.018 * Math.sin(t * 1.7);
+      body.group.position.y = 0.015 * Math.sin(t * 0.9);
+      renderer.render(scene, cam);
+    })();
+
+    let signing = false;
+    const glossEl = document.getElementById('avatar-gloss');
+    const chipsEl = document.getElementById('word-chips');
+    const statusEl = document.getElementById('sign-status');
+    function setStatus(msg, spin = false) { statusEl.innerHTML = spin ? '<span class="dot"></span>' + msg : msg; }
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    async function signItems(items) {
+      if (signing) return; signing = true;
+      chipsEl.innerHTML = '';
+      const ce = items.map((item, idx) => { const c = document.createElement('span'); c.className = 'word-chip'; c.textContent = item.key; c.dataset.idx = idx; chipsEl.appendChild(c); return c; });
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        ce.forEach((c, j) => { c.classList.toggle('active', j === i); c.classList.toggle('done', j < i); });
+        glossEl.textContent = item.key; setStatus('Signing: ' + item.key, true);
+        for (const step of item.sign.steps) { live.poseR = step.R; live.poseL = step.L; live.face = item.sign.face || 'neutral'; live.gloss = item.key; await sleep(step.ms || 350); }
+        live.poseR = REST.R; live.poseL = REST.L; await sleep(180);
+      }
+      live.poseR = REST.R; live.poseL = REST.L; live.face = 'neutral'; live.gloss = ''; glossEl.textContent = '';
+      ce.forEach(c => c.classList.add('done')); setStatus('Done signing ✓'); signing = false;
+    }
+
+    const input = document.getElementById('sign-input');
+    const goBtn = document.getElementById('sign-go');
+    function doSign(text) {
+      // Expose globally
+      window.doSign = doSign;
+      if (signing) return;
+      const t = (text || input.value).trim(); if (!t) return;
+      const { items, reply } = interpret(t);
+      if (!items.length) { setStatus(reply); return; }
+      signItems(items);
+    }
+    goBtn.addEventListener('click', () => doSign());
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') doSign(); });
+
+    const libEl = document.getElementById('lib-chips');
+    PHRASES.forEach(ph => { const b = document.createElement('button'); b.className = 'lib-chip'; b.textContent = ph.label; b.addEventListener('click', () => { input.value = ph.text; doSign(ph.text); }); libEl.appendChild(b); });
+
+    const signChipsEl = document.getElementById('sign-chips');
+    Object.keys(SIGNS).forEach(k => { const b = document.createElement('button'); b.className = 'lib-chip'; b.textContent = k.replace('-', ' '); b.addEventListener('click', () => { if (signing) return; signItems([{ word: k, key: k, sign: SIGNS[k] }]); }); signChipsEl.appendChild(b); });
+
+    const micBtn = document.getElementById('mic-btn');
+    let SR = window.SpeechRecognition || window.webkitSpeechRecognition, rec, micOn = false;
+    micBtn.addEventListener('click', () => {
+      if (!SR) { setStatus('Speech recognition not supported (use Chrome or Edge).'); return; }
+      if (micOn) { rec.stop(); return; }
+      rec = new SR(); rec.continuous = false; rec.interimResults = false; rec.lang = navigator.language || 'en-US';
+      rec.onresult = e => { const t = e.results[0][0].transcript; input.value = t; doSign(t); };
+      rec.onerror = e => { setStatus(e.error === 'not-allowed' ? 'Microphone blocked.' : 'Speech error: ' + e.error); micOn = false; micBtn.classList.remove('active'); micBtn.textContent = '🎤 Speak'; };
+      rec.onend = () => { micOn = false; micBtn.classList.remove('active'); micBtn.textContent = '🎤 Speak'; };
+      try { rec.start(); micOn = true; micBtn.classList.add('active'); micBtn.textContent = '🔴 Listening…'; setStatus(''); }
+      catch (err) { setStatus('Could not start microphone.'); }
+    });
+
+    document.getElementById('speak-btn').addEventListener('click', () => {
+      const t = input.value.trim() || 'Hello, how are you?';
+      if (!('speechSynthesis' in window)) { setStatus('TTS not supported.'); return; }
+      speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(t)); setStatus('Speaking aloud…');
+    });
+
+    setTimeout(() => { input.value = 'hello how are you'; doSign('hello how are you'); }, 1400);
+  </script>
+
+  <!-- ==========================================================
+       CAMERA INTERPRETER & MEDIAPIPE BACKEND CLIENT
+       ========================================================== -->
+  <script>
+    (function() {
+      // DOM Elements
+      const camVideo = document.getElementById('cam-video');
+      const camOverlay = document.getElementById('cam-overlay');
+      const camPlaceholder = document.getElementById('cam-placeholder');
+      const camStatusBadge = document.getElementById('cam-status-badge');
+      const camHandBadge = document.getElementById('cam-hand-badge');
+      const camBackendBadge = document.getElementById('cam-backend-badge');
+      const camToggleBtn = document.getElementById('cam-toggle-btn');
+      const camStartHeroBtn = document.getElementById('cam-start-hero-btn');
+      const camSendNowBtn = document.getElementById('cam-send-now-btn');
+      const camAudioFill = document.getElementById('cam-audio-fill');
+      
+      const backendUrlInput = document.getElementById('backend-url');
+      const backendTestBtn = document.getElementById('backend-test-btn');
+      const backendPingBadge = document.getElementById('backend-ping-badge');
+      const backendStatusMsg = document.getElementById('backend-status-msg');
+      const backendModeSelect = document.getElementById('backend-mode');
+      const streamIntervalSelect = document.getElementById('stream-interval');
+      
+      const detectedHero = document.getElementById('detected-hero');
+      const detectedHeroIcon = document.getElementById('detected-hero-icon');
+      const detectedHeroLabel = document.getElementById('detected-hero-label');
+      const detectedHeroMeta = document.getElementById('detected-hero-meta');
+      const detectedHeroConf = document.getElementById('detected-hero-conf');
+      const detectionSource = document.getElementById('detection-source');
+      
+      const recognizedStream = document.getElementById('recognized-stream');
+      const clearSignsBtn = document.getElementById('clear-signs-btn');
+      const composedSentenceEl = document.getElementById('composed-sentence');
+      const speakSentenceBtn = document.getElementById('speak-sentence-btn');
+      const avatarMirrorBtn = document.getElementById('avatar-mirror-btn');
+      const autoSyncAvatar = document.getElementById('auto-sync-avatar');
+      const autoSpeakTts = document.getElementById('auto-speak-tts');
+
+      let mediaStream = null;
+      let audioCtx = null;
+      let audioAnalyser = null;
+      let audioRaf = null;
+      let handsDetector = null;
+      let mpCamera = null;
+      let streamTimer = null;
+      let recognizedSignsList = [];
+      let lastDetectedSign = '';
+      let lastDetectedTime = 0;
+      let currentSentence = '';
+
+      // Initialize persistent Backend URL
+      const savedUrl = localStorage.getItem('sb_backend_url');
+      if (savedUrl) backendUrlInput.value = savedUrl;
+      backendUrlInput.addEventListener('change', () => {
+        localStorage.setItem('sb_backend_url', backendUrlInput.value.trim());
+      });
+
+      // ── 1. TEST BACKEND CONNECTION ──
+      async function testBackend() {
+        const url = backendUrlInput.value.trim().replace(/\/$/, '');
+        if (!url) return;
+        localStorage.setItem('sb_backend_url', url);
+        backendPingBadge.textContent = 'Testing…';
+        backendPingBadge.style.color = 'var(--muted)';
+
+        const t0 = performance.now();
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 4000);
+          
+          const res = await fetch(url + '/health', { 
+            method: 'GET',
+            mode: 'cors',
+            signal: controller.signal 
+          }).catch(async () => {
+            return await fetch(url + '/', { method: 'GET', mode: 'cors', signal: controller.signal });
+          });
+          clearTimeout(timer);
+
+          const ms = Math.round(performance.now() - t0);
+          if (res.ok) {
+            backendPingBadge.textContent = 'Online (' + ms + 'ms)';
+            backendPingBadge.style.color = '#10B981';
+            camBackendBadge.textContent = 'Backend Online';
+            camBackendBadge.className = 'cam-badge connected';
+            backendStatusMsg.innerHTML = 'Connected to backend at <strong>' + url + '</strong> (' + ms + 'ms latency)';
+          } else {
+            throw new Error('HTTP ' + res.status);
+          }
+        } catch (err) {
+          backendPingBadge.textContent = 'Offline';
+          backendPingBadge.style.color = '#EF4444';
+          camBackendBadge.textContent = 'Backend Offline';
+          camBackendBadge.className = 'cam-badge error';
+          backendStatusMsg.innerHTML = 'Cannot reach <strong>' + url + '</strong>. Ensure server is started with <code>host="0.0.0.0"</code> and CORS enabled.';
+        }
+      }
+      backendTestBtn.addEventListener('click', testBackend);
+
+      // ── 2. CAMERA FEED & AUDIO METER ──
+      async function startCamera() {
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+            audio: true
+          });
+
+          camVideo.srcObject = mediaStream;
+          camPlaceholder.classList.add('hidden');
+          camStatusBadge.textContent = 'Camera Live';
+          camStatusBadge.className = 'cam-badge live';
+          camToggleBtn.textContent = 'Stop Camera';
+          camToggleBtn.classList.replace('btn-primary', 'btn-ghost');
+
+          // Audio meter
+          try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC && mediaStream.getAudioTracks().length) {
+              audioCtx = new AC();
+              audioAnalyser = audioCtx.createAnalyser();
+              audioAnalyser.fftSize = 256;
+              audioCtx.createMediaStreamSource(mediaStream).connect(audioAnalyser);
+              const dataBuf = new Uint8Array(audioAnalyser.frequencyBinCount);
+              const updateAudio = () => {
+                audioAnalyser.getByteTimeDomainData(dataBuf);
+                let peak = 0;
+                for (let i = 0; i < dataBuf.length; i++) {
+                  peak = Math.max(peak, Math.abs(dataBuf[i] - 128));
+                }
+                camAudioFill.style.width = Math.min(100, peak * 2.2) + '%';
+                audioRaf = requestAnimationFrame(updateAudio);
+              };
+              updateAudio();
+            }
+          } catch(e) {}
+
+          // Initialize MediaPipe Hands if loaded
+          initMediaPipe();
+          startStreamLoop();
+
+        } catch (err) {
+          alert('Could not access camera: ' + err.message + '\nPlease ensure camera permission is granted in your browser.');
+        }
+      }
+
+      function stopCamera() {
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(t => t.stop());
+          mediaStream = null;
+        }
+        if (audioRaf) cancelAnimationFrame(audioRaf);
+        if (audioCtx) { audioCtx.close(); audioCtx = null; }
+        if (streamTimer) { clearInterval(streamTimer); streamTimer = null; }
+
+        camVideo.srcObject = null;
+        camPlaceholder.classList.remove('hidden');
+        camStatusBadge.textContent = 'Camera Off';
+        camStatusBadge.className = 'cam-badge';
+        camHandBadge.textContent = 'No Hand in View';
+        camHandBadge.className = 'cam-badge';
+        camToggleBtn.textContent = 'Start Camera';
+        camToggleBtn.classList.replace('btn-ghost', 'btn-primary');
+
+        const ctx = camOverlay.getContext('2d');
+        ctx.clearRect(0, 0, camOverlay.width, camOverlay.height);
+      }
+
+      camToggleBtn.addEventListener('click', () => mediaStream ? stopCamera() : startCamera());
+      camStartHeroBtn.addEventListener('click', startCamera);
+
+      // ── 3. MEDIAPIPE HANDS DRAWING & LOCAL RECOGNIZER ──
+      const HAND_CONNECTIONS = [
+        [0, 1], [1, 2], [2, 3], [3, 4],       // Thumb
+        [0, 5], [5, 6], [6, 7], [7, 8],       // Index
+        [5, 9], [9, 10], [10, 11], [11, 12],  // Middle
+        [9, 13], [13, 14], [14, 15], [15, 16],// Ring
+        [13, 17], [17, 18], [18, 19], [19, 20], // Pinky
+        [0, 17]                               // Palm base
+      ];
+
+      function drawLandmarks(landmarks) {
+        if (!camOverlay || !camVideo.videoWidth) return;
+        if (camOverlay.width !== camVideo.videoWidth) {
+          camOverlay.width = camVideo.videoWidth;
+          camOverlay.height = camVideo.videoHeight;
+        }
+        const ctx = camOverlay.getContext('2d');
+        ctx.clearRect(0, 0, camOverlay.width, camOverlay.height);
+        if (!landmarks || !landmarks.length) return;
+
+        const w = camOverlay.width;
+        const h = camOverlay.height;
+
+        landmarks.forEach(hand => {
+          // Draw connecting skeleton lines
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 3;
+          ctx.lineCap = 'round';
+          HAND_CONNECTIONS.forEach(([i, j]) => {
+            const p1 = hand[i], p2 = hand[j];
+            ctx.beginPath();
+            ctx.moveTo(p1.x * w, p1.y * h);
+            ctx.lineTo(p2.x * w, p2.y * h);
+            ctx.stroke();
+          });
+
+          // Draw joints
+          hand.forEach((p, idx) => {
+            ctx.beginPath();
+            ctx.arc(p.x * w, p.y * h, idx % 4 === 0 ? 6 : 4, 0, 2 * Math.PI);
+            ctx.fillStyle = idx === 4 || idx === 8 || idx === 12 || idx === 16 || idx === 20 ? '#FFB020' : '#ffffff';
+            ctx.fill();
+            ctx.strokeStyle = '#2F5BFF';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          });
+        });
+      }
+
+      
+      // ══════════════════════════════════════════════════════════════
+      // FIX-THE-ITCH VISION MATCHER (from vishaljethani99-create/Fix-the-Itch)
+      // ══════════════════════════════════════════════════════════════
+      const CLIP_FRAMES = 16;
+      const DIM = 63;
+      let ftiPack = null;
+      let ftiMatcher = null;
+      let ftiFrameWindow = [];
+
+      class FixTheItchMatcher {
+        constructor(examples, threshold = 0.38) {
+          this.examples = examples || [];
+          this.threshold = threshold;
+        }
+
+        dist(a, b) {
+          if (a.length !== CLIP_FRAMES || b.length !== CLIP_FRAMES) return Infinity;
+          let best = Infinity;
+          for (let shift = -3; shift <= 3; shift++) {
+            let total = 0, count = 0;
+            for (let f = 0; f < CLIP_FRAMES; f++) {
+              const bf = f + shift;
+              if (bf < 0 || bf >= CLIP_FRAMES) continue;
+              let sum = 0;
+              for (let k = 0; k < DIM; k++) {
+                const d = a[f][k] - b[bf][k];
+                sum += d * d;
+              }
+              total += Math.sqrt(sum);
+              count++;
+            }
+            if (count === 0) continue;
+            const distance = total / count / Math.sqrt(DIM);
+            if (distance < best) best = distance;
+          }
+          return best;
+        }
+
+        match(windowFrames) {
+          if (windowFrames.length !== CLIP_FRAMES || !this.examples.length) return null;
+          let best = { label: '', distance: Infinity };
+          for (const ex of this.examples) {
+            const d = this.dist(windowFrames, ex.frames);
+            if (d < best.distance) {
+              best = { label: ex.label, distance: d };
+            }
+          }
+          if (best.distance <= this.threshold) {
+            const conf = Math.max(0, Math.min(1, 1 - best.distance / (2 * this.threshold)));
+            return { label: best.label, confidence: conf, distance: best.distance };
+          }
+          return null;
+        }
+      }
+
+      function normalizeHand(h, aspect = 4 / 3) {
+        if (!h || h.length !== 21) return new Array(DIM).fill(0);
+        const wrist = h[0];
+        const knuckle = h[9];
+        const size = Math.max(Math.hypot((knuckle.x - wrist.x) * aspect, knuckle.y - wrist.y, (knuckle.z - wrist.z) * aspect), 1e-6);
+        const out = [];
+        for (const p of h) {
+          const x = (p.x - wrist.x) * aspect;
+          const y = p.y - wrist.y;
+          const z = (p.z - wrist.z) * aspect;
+          out.push(x / size, y / size, z / size);
+        }
+        return out;
+      }
+
+      async function loadFixTheItchPack(customBaseUrl) {
+        const url = customBaseUrl ? (customBaseUrl.replace(/\/$/, '') + '/packs/default.json') : '/packs/default.json';
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            ftiPack = await res.json();
+            ftiMatcher = new FixTheItchMatcher(ftiPack.examples || [], 0.38);
+            console.log('Fix-the-Itch pack loaded with ' + (ftiPack.examples || []).length + ' examples');
+            backendStatusMsg.innerHTML = '✅ Fix-the-Itch pack active (' + (ftiPack.examples || []).length + ' sign examples: ' + [...new Set((ftiPack.examples||[]).map(e=>e.label))].join(', ') + ')';
+          }
+        } catch(e) {
+          console.warn('Could not load Fix-the-Itch pack:', e);
+        }
+      }
+      loadFixTheItchPack();
+
+      // Quick Port preset listeners
+      const preset3000 = document.getElementById('preset-3000');
+      const preset5000 = document.getElementById('preset-5000');
+      const btnSyncPack = document.getElementById('btn-sync-pack');
+      if (preset3000) {
+        preset3000.addEventListener('click', () => {
+          const cur = backendUrlInput.value.trim() || 'http://localhost:3000';
+          backendUrlInput.value = cur.replace(/:\d+$/, ':3000');
+          localStorage.setItem('sb_backend_url', backendUrlInput.value);
+          testBackend();
+        });
+      }
+      if (preset5000) {
+        preset5000.addEventListener('click', () => {
+          const cur = backendUrlInput.value.trim() || 'http://localhost:5000';
+          backendUrlInput.value = cur.replace(/:\d+$/, ':5000');
+          localStorage.setItem('sb_backend_url', backendUrlInput.value);
+          testBackend();
+        });
+      }
+      if (btnSyncPack) {
+        btnSyncPack.addEventListener('click', () => {
+          const cur = backendUrlInput.value.trim().replace(/\/$/, '');
+          loadFixTheItchPack(cur);
+        });
+      }
+
+      function localClassify(landmarks) {
+        if (!landmarks || !landmarks.length) return null;
+        const lm = landmarks[0];
+        const thumbTip = lm[4], indexTip = lm[8], middleTip = lm[12], ringTip = lm[16], pinkyTip = lm[20];
+        const indexMcp = lm[5], middleMcp = lm[9], ringMcp = lm[13], pinkyMcp = lm[17];
+
+        const indexUp = indexTip.y < indexMcp.y;
+        const middleUp = middleTip.y < middleMcp.y;
+        const ringUp = ringTip.y < ringMcp.y;
+        const pinkyUp = pinkyTip.y < pinkyMcp.y;
+        const thumbUp = thumbTip.y < indexMcp.y;
+
+        if (thumbUp && indexUp && !middleUp && !ringUp && pinkyUp) return { sign: 'I LOVE YOU', conf: 0.95 };
+        if (indexUp && middleUp && !ringUp && !pinkyUp) return { sign: 'PEACE', conf: 0.92 };
+        if (indexUp && !middleUp && !ringUp && !pinkyUp) return { sign: 'POINT', conf: 0.90 };
+        if (thumbUp && !indexUp && !middleUp && !ringUp && !pinkyUp) return { sign: 'GOOD', conf: 0.92 };
+        if (indexUp && middleUp && ringUp && pinkyUp) return { sign: 'HELLO', conf: 0.96 };
+        if (pinkyUp && !indexUp && !middleUp && !ringUp) return { sign: 'I', conf: 0.88 };
+        if (!indexUp && !middleUp && !ringUp && !pinkyUp) return { sign: 'YES', conf: 0.85 };
+
+        return { sign: 'SIGNING', conf: 0.70 };
+      }
+
+      function initMediaPipe() {
+        if (window.Hands && !handsDetector) {
+          handsDetector = new window.Hands({
+            locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+          });
+          handsDetector.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.5
+          });
+
+          handsDetector.onResults((results) => {
+            const hasHands = results.multiHandLandmarks && results.multiHandLandmarks.length > 0;
+            if (hasHands) {
+              camHandBadge.textContent = 'Hand Detected (' + results.multiHandLandmarks.length + ')';
+              camHandBadge.className = 'cam-badge detected';
+              drawLandmarks(results.multiHandLandmarks);
+
+              // 1. Fix-the-Itch Temporal Window Matcher
+              const handVec = normalizeHand(results.multiHandLandmarks[0]);
+              ftiFrameWindow.push(handVec);
+              if (ftiFrameWindow.length > CLIP_FRAMES) ftiFrameWindow.shift();
+
+              let ftiMatched = null;
+              if (ftiMatcher && ftiFrameWindow.length === CLIP_FRAMES) {
+                ftiMatched = ftiMatcher.match(ftiFrameWindow);
+              }
+
+              if (ftiMatched) {
+                handleDetectedSign(ftiMatched.label, ftiMatched.confidence, 'Fix-the-Itch Matcher');
+              } else {
+                // 2. Static heuristic fallback
+                const local = localClassify(results.multiHandLandmarks);
+                if (local && local.sign !== 'SIGNING') {
+                  handleDetectedSign(local.sign, local.conf, 'On-Device MediaPipe');
+                }
+              }
+            } else {
+              camHandBadge.textContent = 'No Hand in View';
+              camHandBadge.className = 'cam-badge';
+              drawLandmarks(null);
+            }
+          });
+
+          if (window.Camera && !mpCamera) {
+            mpCamera = new window.Camera(camVideo, {
+              onFrame: async () => {
+                if (mediaStream && handsDetector) {
+                  await handsDetector.send({ image: camVideo });
+                }
+              },
+              width: 640,
+              height: 480
+            });
+            mpCamera.start();
+          }
+        }
+      }
+
+      // ── 4. BACKEND FRAME STREAMING & PREDICTION ──
+      const offscreenCanvas = document.createElement('canvas');
+      offscreenCanvas.width = 320;
+      offscreenCanvas.height = 240;
+      const offscreenCtx = offscreenCanvas.getContext('2d');
+
+      function captureFrameBase64() {
+        if (!camVideo || !camVideo.videoWidth) return null;
+        offscreenCtx.drawImage(camVideo, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        return offscreenCanvas.toDataURL('image/jpeg', 0.65);
+      }
+
+      async function sendFrameToBackend() {
+        if (!mediaStream) return;
+        const b64 = captureFrameBase64();
+        if (!b64) return;
+
+        const baseUrl = backendUrlInput.value.trim().replace(/\/$/, '');
+        const route = backendModeSelect.value;
+        if (!baseUrl) return;
+
+        try {
+          const res = await fetch(baseUrl + route, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: b64, signs: recognizedSignsList })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            camBackendBadge.textContent = 'Backend Online';
+            camBackendBadge.className = 'cam-badge connected';
+
+            if (data.sign) {
+              handleDetectedSign(data.sign, data.confidence || 0.90, 'Backend Server');
+            }
+            if (data.sentence) {
+              updateComposedSentence(data.sentence);
+            }
+          }
+        } catch (err) {}
+      }
+
+      function startStreamLoop() {
+        if (streamTimer) clearInterval(streamTimer);
+        const rate = streamIntervalSelect.value;
+        if (rate !== 'manual') {
+          streamTimer = setInterval(sendFrameToBackend, parseInt(rate));
+        }
+      }
+
+      streamIntervalSelect.addEventListener('change', startStreamLoop);
+      camSendNowBtn.addEventListener('click', sendFrameToBackend);
+
+      // ── 5. HANDLE DETECTED SIGN (UI, AVATAR, TTS) ──
+      function handleDetectedSign(sign, confidence, source) {
+        const now = Date.now();
+        if (sign === lastDetectedSign && now - lastDetectedTime < 1400) return;
+        lastDetectedSign = sign;
+        lastDetectedTime = now;
+
+        detectedHero.classList.add('active');
+        setTimeout(() => detectedHero.classList.remove('active'), 800);
+
+        const icons = {
+          'HELLO': '👋', 'PEACE': '✌️', 'I LOVE YOU': '🤟', 'GOOD': '👍',
+          'OK': '👌', 'POINT': '👉', 'YES': '✊', 'HELP': '🆘', 'THANK YOU': '🙏'
+        };
+        detectedHeroIcon.textContent = icons[sign] || '✋';
+        detectedHeroLabel.textContent = sign;
+        detectedHeroMeta.textContent = 'Detected from ' + (source || 'MediaPipe');
+        detectedHeroConf.textContent = Math.round(confidence * 100) + '%';
+        detectionSource.textContent = source || 'MediaPipe';
+
+        addSignToQueue(sign);
+
+        if (autoSyncAvatar.checked && window.doSign) {
+          try {
+            window.doSign(sign.toLowerCase());
+          } catch(e) {}
+        }
+
+        if (autoSpeakTts.checked && ('speechSynthesis' in window)) {
+          try {
+            const utter = new SpeechSynthesisUtterance(sign.toLowerCase());
+            utter.rate = 1.0;
+            window.speechSynthesis.speak(utter);
+          } catch(e) {}
+        }
+      }
+
+      function addSignToQueue(sign) {
+        recognizedSignsList.push(sign);
+        renderQueue();
+        requestSentenceComposition();
+      }
+
+      function renderQueue() {
+        recognizedStream.innerHTML = '';
+        if (!recognizedSignsList.length) {
+          recognizedStream.innerHTML = '<span style="color:var(--muted);font-size:.88rem">Signs you perform will appear here...</span>';
+          return;
+        }
+        recognizedSignsList.forEach((s) => {
+          const chip = document.createElement('span');
+          chip.className = 'recognized-chip';
+          chip.textContent = s;
+          recognizedStream.appendChild(chip);
+        });
+      }
+
+      clearSignsBtn.addEventListener('click', () => {
+        recognizedSignsList = [];
+        renderQueue();
+        composedSentenceEl.textContent = '—';
+      });
+
+      let composeTimer = null;
+      function requestSentenceComposition() {
+        clearTimeout(composeTimer);
+        composeTimer = setTimeout(async () => {
+          if (!recognizedSignsList.length) return;
+          const baseUrl = backendUrlInput.value.trim().replace(/\/$/, '');
+          let sentence = recognizedSignsList.join(' ').toLowerCase();
+          sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1) + '.';
+
+          try {
+            const res = await fetch(baseUrl + '/api/compose', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ signs: recognizedSignsList })
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.sentence) sentence = data.sentence;
+            }
+          } catch(e) {}
+
+          updateComposedSentence(sentence);
+        }, 1200);
+      }
+
+      function updateComposedSentence(sentence) {
+        currentSentence = sentence;
+        composedSentenceEl.textContent = sentence;
+      }
+
+      speakSentenceBtn.addEventListener('click', () => {
+        const text = currentSentence || composedSentenceEl.textContent;
+        if (!text || text === '—') return;
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+        }
+      });
+
+      avatarMirrorBtn.addEventListener('click', () => {
+        const text = currentSentence || recognizedSignsList.join(' ');
+        if (!text || text === '—') return;
+        if (window.doSign) {
+          window.doSign(text);
+        }
+      });
+
+      setTimeout(testBackend, 800);
+    })();
+  </script>
+
+</body>
+
+</html>
